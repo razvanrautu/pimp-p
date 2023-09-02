@@ -1,7 +1,12 @@
 import numpy as np
 import cv2
 import pickle
+import tkinter as tk
+from tkinter import ttk
+from tkinter import messagebox
+from PIL import Image, ImageTk
 
+import threading
 #############################################
 
 frameWidth = 640  # CAMERA RESOLUTION
@@ -19,6 +24,11 @@ cap.set(10, brightness)
 # IMPORT THE TRANNIED MODEL
 pickle_in = open("model_trained.p", "rb")  ## rb = READ BYTE
 model = pickle.load(pickle_in)
+
+# Variabile pentru stocarea cadrului video și predicțiilor
+current_frame = None
+current_prediction = ""
+current_probability = ""
 
 
 def grayscale(img):
@@ -126,31 +136,80 @@ def getCalssName(classNo):
     elif classNo == 42:
         return 'End of no passing by vechiles over 3.5 metric tons'
 
+# Function to update the video frame
+def update_video_frame():
+    global current_frame
+    while True:
+        ret, frame = cap.read()
+        if ret:
+            frame = cv2.resize(frame, (640, 480))
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            current_frame = frame  # Actualizăm cadrul video curent
+        else:
+            messagebox.showerror("Error", "Unable to read video frame!")
 
-while True:
+# Create the main GUI window
+root = tk.Tk()
+root.title("Traffic Sign Recognition")
 
-    # READ IMAGE
-    success, imgOrignal = cap.read()
+# Create a label for displaying video
+video_label = ttk.Label(root)
+video_label.pack()
 
-    # PROCESS IMAGE
-    img = np.asarray(imgOrignal)
-    img = cv2.resize(img, (32, 32))
-    img = preprocessing(img)
-    cv2.imshow("Processed Image", img)
-    img = img.reshape(1, 32, 32, 1)
-    cv2.putText(imgOrignal, "CLASS: ", (20, 35), font, 0.75, (0, 0, 255), 2, cv2.LINE_AA)
-    cv2.putText(imgOrignal, "PROBABILITY: ", (20, 75), font, 0.75, (0, 0, 255), 2, cv2.LINE_AA)
-    # PREDICT IMAGE
-    predictions = model.predict(img)
-    classIndex = np.argmax(model.predict(img), axis=-1)
-    probabilityValue = np.amax(predictions)
-    if probabilityValue > threshold:
-        print(getCalssName(classIndex))
-        cv2.putText(imgOrignal, str(classIndex) + " " + str(getCalssName(classIndex)), (120, 35), font, 0.75, (0, 0, 255), 2,
-                    cv2.LINE_AA)
-    cv2.putText(imgOrignal, str(round(probabilityValue * 100, 2)) + "%", (180, 75), font, 0.75, (0, 0, 255), 2, cv2.LINE_AA)
-    cv2.imshow("Result", imgOrignal)
+# Create a label for displaying the prediction result
+result_label = ttk.Label(root, text="", font=("Helvetica", 16))
+result_label.pack()
 
-    if cv2.waitKey(1) and 0xFF == ord('q'):
-        break
+# Create a label for displaying the probability
+probability_label = ttk.Label(root, text="", font=("Helvetica", 14))
+probability_label.pack()
 
+# Function to make predictions on the current frame
+def predict_frame():
+    global current_frame, current_prediction, current_probability
+    while True:
+        if current_frame is not None:
+            frame = current_frame
+            frame_copy = frame.copy()  # Facem o copie pentru a desena textul
+            frame = cv2.resize(frame, (32, 32))
+            frame = preprocessing(frame)
+            frame = frame.reshape(1, 32, 32, 1)
+            predictions = model.predict(frame)
+            classIndex = np.argmax(predictions, axis=-1)
+            probabilityValue = np.amax(predictions)
+            if probabilityValue > threshold:
+                current_prediction = getCalssName(classIndex)
+            else:
+                current_prediction = "Unknown"
+            current_probability = str(round(probabilityValue * 100, 2)) + "%"
+            # Desenăm rezultatele pe cadrul video
+            cv2.putText(frame_copy, "CLASS: " + current_prediction, (20, 35), font, 0.75, (0, 0, 255), 2, cv2.LINE_AA)
+            cv2.putText(frame_copy, "PROBABILITY: " + current_probability, (20, 75), font, 0.75, (0, 0, 255), 2, cv2.LINE_AA)
+            # Actualizăm eticheta rezultatului în interfața grafică
+            result_label.config(text=current_prediction)
+            probability_label.config(text=current_probability)
+            # Actualizăm eticheta video în interfața grafică
+            photo = ImageTk.PhotoImage(image=Image.fromarray(frame_copy))
+            video_label.config(image=photo)
+            video_label.image = photo
+        else:
+            current_prediction = "Unknown"
+            current_probability = ""
+            result_label.config(text=current_prediction)
+            probability_label.config(text=current_probability)
+
+
+# Creăm firele de execuție pentru citirea și predicția cadrului video
+video_thread = threading.Thread(target=update_video_frame)
+prediction_thread = threading.Thread(target=predict_frame)
+
+# Pornim firele de execuție
+video_thread.start()
+prediction_thread.start()
+
+
+# Button to quit the application
+quit_button = ttk.Button(root, text="Quit Application", command=root.destroy)
+quit_button.pack()
+
+root.mainloop()
