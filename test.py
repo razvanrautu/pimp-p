@@ -17,10 +17,11 @@ font = cv2.FONT_HERSHEY_SIMPLEX
 ##############################################
 
 # SETUP THE VIDEO CAMERA
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 cap.set(3, frameWidth)
 cap.set(4, frameHeight)
 cap.set(10, brightness)
+
 # IMPORT THE TRANNIED MODEL
 pickle_in = open("model_trained.p", "rb")  ## rb = READ BYTE
 model = pickle.load(pickle_in)
@@ -136,17 +137,21 @@ def getCalssName(classNo):
     elif classNo == 42:
         return 'End of no passing by vechiles over 3.5 metric tons'
 
+# Variables for controlling the application
+app_running = True
+
 # Function to update the video frame
 def update_video_frame():
-    global current_frame
-    while True:
+    global current_frame, app_running
+    while app_running:
         ret, frame = cap.read()
         if ret:
             frame = cv2.resize(frame, (640, 480))
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            current_frame = frame  # Actualizăm cadrul video curent
+            current_frame = frame
         else:
-            messagebox.showerror("Error", "Unable to read video frame!")
+            pass
+    cap.release()
 
 # Create the main GUI window
 root = tk.Tk()
@@ -166,11 +171,11 @@ probability_label.pack()
 
 # Function to make predictions on the current frame
 def predict_frame():
-    global current_frame, current_prediction, current_probability
-    while True:
+    global current_frame, current_prediction, current_probability, app_running
+    while app_running:
         if current_frame is not None:
             frame = current_frame
-            frame_copy = frame.copy()  # Facem o copie pentru a desena textul
+            frame_copy = frame.copy()
             frame = cv2.resize(frame, (32, 32))
             frame = preprocessing(frame)
             frame = frame.reshape(1, 32, 32, 1)
@@ -178,17 +183,14 @@ def predict_frame():
             classIndex = np.argmax(predictions, axis=-1)
             probabilityValue = np.amax(predictions)
             if probabilityValue > threshold:
-                current_prediction = getCalssName(classIndex)
+                current_prediction = getClassName(classIndex)
             else:
                 current_prediction = "Unknown"
             current_probability = str(round(probabilityValue * 100, 2)) + "%"
-            # Desenăm rezultatele pe cadrul video
             cv2.putText(frame_copy, "CLASS: " + current_prediction, (20, 35), font, 0.75, (0, 0, 255), 2, cv2.LINE_AA)
             cv2.putText(frame_copy, "PROBABILITY: " + current_probability, (20, 75), font, 0.75, (0, 0, 255), 2, cv2.LINE_AA)
-            # Actualizăm eticheta rezultatului în interfața grafică
             result_label.config(text=current_prediction)
             probability_label.config(text=current_probability)
-            # Actualizăm eticheta video în interfața grafică
             photo = ImageTk.PhotoImage(image=Image.fromarray(frame_copy))
             video_label.config(image=photo)
             video_label.image = photo
@@ -207,9 +209,15 @@ prediction_thread = threading.Thread(target=predict_frame)
 video_thread.start()
 prediction_thread.start()
 
+# Function to quit the application
+def quit_application():
+    global app_running
+    app_running = False
+    cap.release()
+    root.destroy()
 
 # Button to quit the application
-quit_button = ttk.Button(root, text="Quit Application", command=root.destroy)
+quit_button = ttk.Button(root, text="Quit Application", command=quit_application)
 quit_button.pack()
 
 root.mainloop()
